@@ -265,8 +265,9 @@ def delete_source_from_store(source_id: int) -> bool:
 # ═══════════════════════════════════════════════════════════════════════════
 
 ADD_NAME, ADD_URL, ADD_TYPE, ADD_CATEGORY = range(4)
+SEARCH_KEYWORD = 10
 
-SOURCE_TYPES = ["rss", "idx_api", "stockbit_api"]
+SOURCE_TYPES = ["rss", "idx_api", "stockbit_api", "sitemap.xml"]
 SOURCE_CATEGORIES = [
     "Market", "Macro", "Commodity", "Sectoral", "Corporate Action", "Disclosure",
 ]
@@ -491,9 +492,13 @@ def notify_new_articles(articles: List[Dict[str, Any]]) -> None:
         cat_emoji = CATEGORY_EMOJI.get(item.get("category", ""), "📁")
         url = item.get("url", "")
         pub = format_published_date(item.get("published_at", ""))
+        
+        # Ekstrak nama sumber berita
+        source = escape(item.get("source_name", "?"))
 
         lines.append(f"{emoji} <b>{title}</b>")
-        lines.append(f"   {cat_emoji} {cat} · 🕐 {pub}")
+        # Tambahkan ikon koran (📰) dan nama sumber di antara kategori dan waktu
+        lines.append(f"   {cat_emoji} {cat} · 📰 {source} · 🕐 {pub}")
         lines.append(f"   🔗 <a href='{url}'>Baca</a> · <code>{news_id}</code>")
         lines.append("")
 
@@ -557,8 +562,15 @@ async def _send_news_page(
         "cat_Sectoral": "🏭 Sektoral",
         "cat_Corporate Action": "🏢 Corporate Action",
         "cat_Disclosure": "📋 Disclosure",
+        "search_result": "🔍 Hasil Pencarian",
     }
-    header = header_map.get(list_type, "📰 Berita")
+    header = header_map.get(list_type)
+    if not header:
+        if list_type.startswith("src_") and items:
+            sname = escape(items[0].get("source_name", "Sumber"))
+            header = f"📡 {sname}"
+        else:
+            header = "📰 Berita"
 
     current_page = (offset // PAGE_SIZE) + 1
     total_pages = max(1, (total + PAGE_SIZE - 1) // PAGE_SIZE)
@@ -669,6 +681,10 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "📰 <b>Membaca Berita</b>\n"
         "• /list\n"
         "  Menampilkan daftar semua berita terbaru yang sudah dikumpulkan.\n"
+        "• /search\n"
+        "  Cari berita berdasarkan kata kunci.\n"
+        "• /source\n"
+        "  Memilih berita berdasarkan sumber berita (IDX, BloombergTechnoz, dll).\n"
         "• /category\n"
         "  Memilih berita berdasarkan topik (Market, Makro, Komoditas, dll).\n\n"
         
@@ -721,6 +737,64 @@ async def cmd_unsubscribe(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 # ═══════════════════════════════════════════════════════════════════════════
 # Command Handlers — News
 # ════════════════���══════════════════════════════════════════════════════════
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Search News — Conversation Wizard
+# ═══════════════════════════════════════════════════════════════════════════
+
+async def cmd_search_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    await update.message.reply_text(
+        "🔍 <b>Pencarian Berita</b>\n\n"
+        "Silakan masukkan kata kunci yang ingin dicari\n"
+        "(contoh: <code>MSCI</code>, <code>BBCA</code>, <code>Dividen</code>):\n\n"
+        "<i>Ketik /cancel untuk membatalkan.</i>",
+        parse_mode=ParseMode.HTML
+    )
+    return SEARCH_KEYWORD
+
+async def handle_search_keyword(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    keyword = update.message.text.strip()
+    if not keyword:
+        await update.message.reply_text("❌ Kata kunci tidak boleh kosong. Silakan masukkan lagi:")
+        return SEARCH_KEYWORD
+
+    msg = await update.message.reply_text(f"⏳ Mencari berita dengan kata kunci: <b>{escape(keyword)}</b>...", parse_mode=ParseMode.HTML)
+
+    store = get_store()
+    
+    # Gunakan fungsi search_news jika sudah di-update di store.py/db.py
+    # Jika tidak, gunakan fallback pencarian manual di memory
+    if hasattr(store, "search_news"):
+        results = store.search_news(keyword)
+    else:
+        all_news = store.get_all()
+        results = []
+        for n in all_news:
+            title = n.get("title", "").lower()
+            summary = ""
+            if n.get("analysis") and isinstance(n["analysis"], dict):
+                summary = n["analysis"].get("summary", "").lower()
+            
+            if keyword.lower() in title or keyword.lower() in summary:
+                results.append(n)
+
+    if not results:
+        await msg.edit_text(f"📭 Tidak ditemukan berita untuk kata kunci: <b>{escape(keyword)}</b>.", parse_mode=ParseMode.HTML)
+        return ConversationHandler.END
+
+    # Kita simpan hasil pencarian ke cache untuk Pagination (tombol Next/Prev)
+    list_type = "search_result"
+    context.user_data[f"list_cache_{list_type}"] = results
+    
+    # Hapus pesan loading dan tampilkan hasilnya menggunakan fungsi list default
+    await msg.delete()
+    await _send_news_page(update.message, results, 0, len(results), list_type)
+
+    return ConversationHandler.END
+
+async def cmd_search_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    await update.message.reply_text("❌ Pencarian dibatalkan.")
+    return ConversationHandler.END
 
 
 async def cmd_list_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -829,6 +903,54 @@ async def cmd_analyze_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
         )
     except Exception as exc:
         await msg.edit_text(f"❌ Error: {escape(str(exc))}")
+        
+async def cmd_source_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    store = get_store()
+    all_news = store.get_all()
+
+    # Kelompokkan berita berdasarkan source_id dan source_name
+    sources_map: Dict[int, Dict[str, Any]] = {}
+    for r in all_news:
+        sid = r.get("source_id")
+        sname = r.get("source_name", "Unknown")
+        if not sid:
+            continue
+        if sid not in sources_map:
+            sources_map[sid] = {"name": sname, "count": 0}
+        sources_map[sid]["count"] += 1
+
+    if not sources_map:
+        await update.message.reply_text("📭 Belum ada berita.")
+        return
+
+    buttons = []
+    row = []
+    # Urutkan berdasarkan jumlah berita terbanyak
+    for sid, data in sorted(sources_map.items(), key=lambda x: -x[1]["count"]):
+        name = escape(data["name"])
+        count = data["count"]
+        row.append(
+            InlineKeyboardButton(
+                f"📡 {name} ({count})",
+                callback_data=f"src:{sid}",
+            )
+        )
+        if len(row) == 2:
+            buttons.append(row)
+            row = []
+    if row:
+        buttons.append(row)
+
+    buttons.append([
+        InlineKeyboardButton(f"📰 Semua ({len(all_news)})", callback_data="cat:all")
+    ])
+
+    await update.message.reply_text(
+        "📡 <b>Pilih Sumber Berita</b>\n\n"
+        "Tap sumber untuk melihat daftar berita:",
+        parse_mode=ParseMode.HTML,
+        reply_markup=InlineKeyboardMarkup(buttons),
+    )
 
 @admin_only
 async def cmd_collect_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1062,6 +1184,32 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
         context.user_data[f"list_cache_{list_type}"] = items
         await _send_news_page(query.message, items, 0, len(items), list_type)
+        
+    # ── Source selection (Filter by Source) ───────────────────────────
+    elif data.startswith("src:"):
+        try:
+            source_id = int(data[4:])
+        except ValueError:
+            source_id = 0
+
+        store = get_store()
+        
+        # GUNAKAN FUNGSI DB YANG BARU AGAR LEBIH CEPAT
+        if hasattr(store, "get_by_source"):
+            items = store.get_by_source(source_id)
+        else:
+            # Fallback kalau belum update db.py
+            all_news = store.get_all()
+            items = [n for n in all_news if n.get("source_id") == source_id]
+            
+        list_type = f"src_{source_id}"
+
+        if not items:
+            await query.edit_message_text("📭 Tidak ada berita dari sumber ini.")
+            return
+
+        context.user_data[f"list_cache_{list_type}"] = items
+        await _send_news_page(query.message, items, 0, len(items), list_type)
 
     # ── Pagination ────────────────────────────────────────────────────
     elif data.startswith("page:"):
@@ -1079,6 +1227,12 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             elif list_type.startswith("cat_"):
                 cat_name = list_type[4:]
                 items = [n for n in store.get_all() if n.get("category") == cat_name]
+            elif list_type.startswith("src_"):
+                sid = int(list_type[4:])
+                if hasattr(store, "get_by_source"):
+                    items = store.get_by_source(sid)
+                else:
+                    items = [n for n in store.get_all() if n.get("source_id") == sid]
             else:
                 items = store.get_all()
             context.user_data[cache_key] = items
@@ -1262,7 +1416,9 @@ async def post_init(application) -> None:
         BotCommand("start", "Mulai bot"),
         BotCommand("help", "Bantuan"),
         BotCommand("list", "Baca berita terbaru"),
-        BotCommand("category", "Pilih kategori berita"),
+        BotCommand("search", "🔍 Cari berita"),
+        BotCommand("source", "📡 Pilih sumber berita"),
+        BotCommand("category", "📚 Pilih kategori berita"),
         BotCommand("analyze", "Analisa berita"),
         BotCommand("subscribe", "Langganan notifikasi"),
         BotCommand("unsubscribe", "Stop notifikasi"),
@@ -1344,6 +1500,14 @@ def run_bot() -> None:
     app.add_handler(CommandHandler("subscribe", cmd_subscribe))
     app.add_handler(CommandHandler("unsubscribe", cmd_unsubscribe))
     app.add_handler(CommandHandler("list", cmd_list_handler))
+    app.add_handler(ConversationHandler(
+        entry_points=[CommandHandler("search", cmd_search_start)],
+        states={
+            SEARCH_KEYWORD: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_search_keyword)],
+        },
+        fallbacks=[CommandHandler("cancel", cmd_search_cancel)],
+    ))
+    app.add_handler(CommandHandler("source", cmd_source_handler))
     app.add_handler(CommandHandler("category", cmd_category_handler))
     app.add_handler(CommandHandler("stats", cmd_stats_handler))
     app.add_handler(CommandHandler("analyze", cmd_analyze_handler))

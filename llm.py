@@ -197,6 +197,50 @@ JSON format:
     return _run_filter(groq, system, user, entries, is_idx=True)
 
 
+# def _run_filter(
+#     groq: GroqClient,
+#     system: str,
+#     user: str,
+#     entries: List[Dict[str, Any]],
+#     is_idx: bool = False,
+# ) -> List[Dict[str, Any]]:
+#     """Eksekusi LLM filter dan parse hasilnya."""
+#     try:
+#         raw = groq.chat(system, user, max_tokens=GROQ_FILTER_MAX_TOKENS)
+#         data = json.loads(raw)
+
+#         relevant = []
+#         for r in data.get("results", []):
+#             idx = r.get("index", 0) - 1
+#             if 0 <= idx < len(entries) and r.get("relevant", False):
+#                 entry = entries[idx]
+
+#                 if is_idx:
+#                     entry["_filter_category"] = "Disclosure"
+#                     entry["_filter_sub_category"] = r.get("sub_category", "lainnya")
+
+#                     sub = r.get("sub_category", "")
+#                     if sub in ("lapkeu_tahunan", "lapkeu_kuartal"):
+#                         entry["_is_lapkeu"] = True
+#                 else:
+#                     cat = r.get("category", "Market")
+#                     if cat not in VALID_CATEGORIES:
+#                         cat = "Market"
+#                     entry["_filter_category"] = cat
+
+#                 sentiment = r.get("sentiment", "neutral")
+#                 if sentiment not in VALID_SENTIMENTS:
+#                     sentiment = "neutral"
+#                 entry["_filter_sentiment"] = sentiment
+#                 entry["_filter_reason"] = r.get("reason", "")
+#                 relevant.append(entry)
+
+#         return relevant
+
+#     except Exception as exc:
+#         logger.error("  ✗ Filter error: %s", exc)
+#         return entries
+
 def _run_filter(
     groq: GroqClient,
     system: str,
@@ -210,7 +254,19 @@ def _run_filter(
         data = json.loads(raw)
 
         relevant = []
-        for r in data.get("results", []):
+        results_list = data.get("results", [])
+        
+        # PROTEKSI 1: Pastikan data 'results' benar-benar sebuah List
+        if not isinstance(results_list, list):
+            logger.warning("  ⚠ Format LLM salah (results bukan list). Fallback: loloskan semua berita di batch ini.")
+            return entries # Atau kembalikan [] jika ingin membuang semua isi batch
+
+        for r in results_list:
+            # PROTEKSI 2: Pastikan setiap item 'r' di dalam list adalah Dictionary
+            if not isinstance(r, dict):
+                logger.warning("  ⚠ Format item salah (bukan dictionary), item diabaikan.")
+                continue # Lewati item yang rusak, lanjut ke item berikutnya
+            
             idx = r.get("index", 0) - 1
             if 0 <= idx < len(entries) and r.get("relevant", False):
                 entry = entries[idx]
@@ -238,9 +294,9 @@ def _run_filter(
         return relevant
 
     except Exception as exc:
+        # Jika JSON gagal diparse sama sekali, fallback ke semua entries (sesuai kodemu sebelumnya)
         logger.error("  ✗ Filter error: %s", exc)
         return entries
-
 
 # ---------------------------------------------------------------------------
 # Phase 5: Deep Analysis

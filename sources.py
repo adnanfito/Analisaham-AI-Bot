@@ -10,10 +10,12 @@ import re
 import sys
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
+from bs4 import BeautifulSoup
 
 import feedparser
 import requests
 
+from tenacity import retry, stop_after_attempt, wait_fixed
 from config import SOURCES_FILE, SUPABASE_URL, SUPABASE_SERVICE_KEY, logger
 from helpers import clean_text, strip_html
 
@@ -23,25 +25,28 @@ from helpers import clean_text, strip_html
 # ---------------------------------------------------------------------------
 
 
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_fixed(5),
+    reraise=True, # Biarkan error terlempar jika sudah 3 kali gagal, agar ditangkap oleh retry di cmd_collect
+    before_sleep=lambda retry_state: logger.warning(
+        "⏳ Gagal memuat sources dari Supabase. Mencoba lagi dalam 5 detik... (Attempt %d/3). Error: %s",
+        retry_state.attempt_number,
+        retry_state.outcome.exception()
+    )
+)
 def load_sources() -> List[Dict[str, Any]]:
-    """Load active sources. Auto-select Supabase atau JSON."""
-    if SUPABASE_URL and SUPABASE_SERVICE_KEY:
-        try:
-            from db import SupabaseDB
-            db = SupabaseDB()
-            sources = db.get_active_sources()
-            logger.info("📡 Sources loaded from Supabase (%d active)", len(sources))
-            return sources
-        except Exception as exc:
-            logger.warning("⚠ Supabase sources failed (%s), fallback to JSON", exc)
-
-    # Fallback: JSON
-    if not SOURCES_FILE.exists():
-        logger.critical("sources.json not found!")
+    """Load active sources exclusively from Supabase with retry logic."""
+    if not (SUPABASE_URL and SUPABASE_SERVICE_KEY):
+        logger.critical("Kredensial Supabase tidak ditemukan di .env!")
         sys.exit(1)
-    with open(SOURCES_FILE, "r", encoding="utf-8") as f:
-        sources = json.load(f)
-    return [s for s in sources if s.get("is_active", True)]
+
+    from db import SupabaseDB
+    db = SupabaseDB()
+    
+    sources = db.get_active_sources()
+    logger.info("📡 Sources loaded from Supabase (%d active)", len(sources))
+    return sources  
 
 
 # ---------------------------------------------------------------------------
@@ -122,9 +127,76 @@ def get_new_entries(
 
 
 # ---------------------------------------------------------------------------
-# IDX Announcements
+# Investor.id Sitemap XML
 # ---------------------------------------------------------------------------
 
+def fetch_investor_sitemap(sitemap_url: str) -> list:
+    """
+    Fetch dan parse artikel dari Google News Sitemap (investor.id).
+    Mengembalikan list of dictionaries mirip dengan output feedparser atau Stockbit API.
+    """
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "application/xml, text/xml, */*"
+    }
+    
+    try:
+        # 1. Request ke URL Sitemap
+        resp = requests.get(sitemap_url, headers=headers, timeout=15)
+        
+        if resp.status_code != 200:
+            logger.warning("Investor.id Sitemap status code: %s", resp.status_code)
+            return []
+
+        # 2. Parse XML menggunakan BeautifulSoup
+        # WAJIB: pastikan kamu sudah menjalankan `pip install lxml` di terminal
+        soup = BeautifulSoup(resp.content, "xml")
+        
+        # 3. Cari semua tag <url>
+        url_tags = soup.find_all("url")
+        entries = []
+        
+        for item in url_tags:
+            # Ambil tag <loc> untuk URL
+            loc_tag = item.find("loc")
+            
+            # Data berita ada di dalam tag <news:news>
+            news_tag = item.find("news:news")
+            
+            if not loc_tag or not news_tag:
+                continue
+                
+            title_tag = news_tag.find("news:title")
+            pub_date_tag = news_tag.find("news:publication_date")
+            name_tag = news_tag.find("news:name")
+            
+            if loc_tag and title_tag:
+                link = loc_tag.text.strip()
+                title = title_tag.text.strip()
+                published = pub_date_tag.text.strip() if pub_date_tag else ""
+                source_name = name_tag.text.strip() if name_tag else "Investor Daily"
+                
+                # 4. Susun dictionary yang AMAN untuk Phase 2 (Scraping) & Phase 3 (LLM)
+                entries.append({
+                    "id": link,                 # Sitemap tidak punya ID unik, jadi pakai URL saja
+                    "link": link,
+                    "title": title,
+                    "published": published,
+                    "summary": "",              # Fallback agar tidak error saat di-.get("summary")
+                    "content": "",              # Fallback agar tidak error saat di-.get("content")
+                    "source": source_name
+                })
+                
+        logger.info("    📋 Parsed %d investor.id sitemap entries", len(entries))
+        return entries
+
+    except Exception as exc:
+        logger.error("Investor.id sitemap fetch error: %s", exc)
+        return []
+
+# ---------------------------------------------------------------------------
+# IDX Announcements
+# ---------------------------------------------------------------------------
 
 def fetch_idx_announcements(api_url: str) -> List[Dict[str, Any]]:
     data = _fetch_idx_via_requests(api_url)

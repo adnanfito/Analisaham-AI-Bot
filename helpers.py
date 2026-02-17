@@ -45,28 +45,31 @@ def similarity(a: str, b: str) -> float:
 
 def parse_published_date(entry: dict, source_type: str = "rss") -> str:
     """
-    Parse tanggal publish dari RSS/IDX entry secara cerdas.
+    Parse tanggal publish dari RSS, IDX, atau Stockbit secara cerdas.
     Mencegah double-conversion timezone yang membuat waktu loncat.
     """
     from datetime import datetime, timezone, timedelta
     import re
-    # dateutil sangat disarankan karena pintar mendeteksi ISO string & timezone
+    
     try:
         from dateutil.parser import parse as dateutil_parse
     except ImportError:
         dateutil_parse = None
 
-    # 1. Ambil raw string
-    raw = entry.get("published", "") or entry.get("updated", "")
+    # 1. Ambil raw string berdasarkan source_type
+    if source_type == "stockbit_api":
+        # Stockbit menggunakan 'created' (Contoh: "2026-02-14 13:00:08")
+        raw = entry.get("created", "")
+    else:
+        raw = entry.get("published", "") or entry.get("updated", "")
     
-    # 2. Cek apakah ini struct_time dari feedparser (RSS biasanya begini)
-    #    Ini format paling aman karena pasti UTC.
+    # 2. Cek apakah ini struct_time dari feedparser (Khusus RSS)
     if "published_parsed" in entry and entry["published_parsed"]:
         import calendar
         ts = calendar.timegm(entry["published_parsed"])
         return datetime.fromtimestamp(ts, tz=timezone.utc).isoformat()
     
-    if not raw:
+    if not raw or raw == "0000-00-00 00:00:00":
         return datetime.now(timezone.utc).isoformat()
 
     # Definisi Timezone
@@ -77,32 +80,30 @@ def parse_published_date(entry: dict, source_type: str = "rss") -> str:
     # KHUSUS IDX API (Format Epoch Microsoft)
     # ---------------------------------------------------------
     if source_type == "idx_api":
-        # Contoh: /Date(1707645600000)/
         epoch_match = re.search(r"/Date\((\d+)\)/", raw)
         if epoch_match:
             ts = int(epoch_match.group(1)) / 1000
-            # Epoch selalu UTC
             return datetime.fromtimestamp(ts, tz=utc).isoformat()
 
     # ---------------------------------------------------------
-    # PARSING STRING (Universal untuk IDX & RSS)
+    # PARSING STRING (Universal: IDX, Stockbit, RSS)
     # ---------------------------------------------------------
     dt = None
 
-    # Cara 1: Gunakan dateutil (Prioritas Utama - Paling Robust)
+    # Cara 1: dateutil (Paling robust untuk format aneh)
     if dateutil_parse:
         try:
             dt = dateutil_parse(raw)
         except (ValueError, TypeError):
             pass
 
-    # Cara 2: Fallback Manual (Jika dateutil gagal/tidak ada)
+    # Cara 2: Fallback Manual (Format "2026-02-14 13:00:08" masuk ke sini)
     if dt is None:
         formats = [
+            "%Y-%m-%d %H:%M:%S",         # Format Stockbit & DB
             "%Y-%m-%dT%H:%M:%S%z",      # ISO dengan timezone
-            "%Y-%m-%dT%H:%M:%SZ",       # ISO UTC (Z)
+            "%Y-%m-%dT%H:%M:%SZ",       # ISO UTC
             "%Y-%m-%dT%H:%M:%S",        # ISO Naive
-            "%Y-%m-%d %H:%M:%S",        # Format umum DB
             "%d %b %Y %H:%M:%S",        # Format web
         ]
         for fmt in formats:
@@ -112,29 +113,24 @@ def parse_published_date(entry: dict, source_type: str = "rss") -> str:
             except ValueError:
                 continue
 
-    # Jika masih gagal parsing, return Now
     if dt is None:
         return datetime.now(utc).isoformat()
 
     # ---------------------------------------------------------
-    # LOGIKA PERBAIKAN TIMEZONE (THE FIX)
+    # LOGIKA PERBAIKAN TIMEZONE
     # ---------------------------------------------------------
     
-    # KASUS A: String aslinya SUDAH punya info timezone (Aware)
-    # Contoh: "2026-02-12T01:00:00Z" atau "2026-02-12T08:00:00+07:00"
+    # KASUS A: String punya info timezone (Aware)
     if dt.tzinfo is not None:
-        # Langsung convert ke UTC tanpa asumsi apapun.
-        # Ini memperbaiki bug "loncat 7 jam".
         return dt.astimezone(utc).isoformat()
 
-    # KASUS B: String aslinya TIDAK punya info timezone (Naive)
-    # Contoh: "2026-02-12 01:00:00" (Ambigu, jam 1 siang mana?)
+    # KASUS B: String TIDAK punya info timezone (Naive)
     else:
-        if source_type == "idx_api":
-            # Asumsi: Kalau dari IDX tidak ada label, PASTI WIB.
+        # Stockbit dan IDX API (jika string) diasumsikan WIB
+        if source_type in ["idx_api", "stockbit_api"]:
             dt = dt.replace(tzinfo=wib)
         else:
-            # Asumsi: Default web/RSS biasanya UTC
+            # Default RSS biasanya UTC
             dt = dt.replace(tzinfo=utc)
             
         return dt.astimezone(utc).isoformat()

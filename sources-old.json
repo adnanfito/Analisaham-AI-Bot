@@ -1,0 +1,106 @@
+[
+  {
+    "id": 1,
+    "name": "Investing.com Indonesia",
+    "feed_url": "https://id.investing.com/rss/market_overview.rss",
+    "is_active": true,
+    "category": "Market",
+    "type": "rss"
+  },
+  {
+    "id": 2,
+    "name": "Bloomberg Technoz",
+    "feed_url": "https://www.bloombergtechnoz.com/rss",
+    "is_active": true,
+    "category": "Market",
+    "type": "rss"
+  },
+  {
+    "id": 3,
+    "name": "CNBC Indonesia",
+    "feed_url": "https://www.cnbcindonesia.com/rss",
+    "is_active": true,
+    "category": "Market",
+    "type": "rss"
+  },
+  {
+    "id": 4,
+    "name": "Detik Finance",
+    "feed_url": "https://finance.detik.com/rss",
+    "is_active": true,
+    "category": "Macro",
+    "type": "rss"
+  },
+  {
+    "id": 5,
+    "name": "Antara - Bursa",
+    "feed_url": "https://www.antaranews.com/rss/ekonomi-bursa.xml",
+    "is_active": true,
+    "category": "Market",
+    "type": "rss"
+  },
+  {
+    "id": 6,
+    "name": "Antara - Bisnis",
+    "feed_url": "https://www.antaranews.com/rss/ekonomi-bisnis.xml",
+    "is_active": true,
+    "category": "Sectoral",
+    "type": "rss"
+  },
+  {
+    "id": 7,
+    "name": "Antara - Finansial",
+    "feed_url": "https://www.antaranews.com/rss/ekonomi-finansial.xml",
+    "is_active": true,
+    "category": "Macro",
+    "type": "rss"
+  },
+  {
+    "id": 8,
+    "name": "Kontan - Investasi",
+    "feed_url": "https://investasi.kontan.co.id/rss",
+    "is_active": true,
+    "category": "Market",
+    "type": "rss"
+  },
+  {
+    "id": 9,
+    "name": "Kontan - Keuangan",
+    "feed_url": "https://keuangan.kontan.co.id/rss",
+    "is_active": true,
+    "category": "Macro",
+    "type": "rss"
+  },
+  {
+    "id": 10,
+    "name": "Kontan - Industri",
+    "feed_url": "https://industri.kontan.co.id/rss",
+    "is_active": true,
+    "category": "Sectoral",
+    "type": "rss"
+  },
+  {
+    "id": 11,
+    "name": "StockWatch ID",
+    "feed_url": "https://stockwatch.id/feed",
+    "is_active": true,
+    "category": "Market",
+    "type": "rss"
+  },
+  {
+    "id": 12,
+    "name": "EmitenTrust",
+    "feed_url": "https://emitentrust.com/feed/",
+    "is_active": true,
+    "category": "Corporate Action",
+    "type": "rss"
+  },
+  {
+    "id": 13,
+    "name": "IDX - Keterbukaan Informasi",
+    "feed_url": "https://www.idx.co.id/primary/ListedCompany/GetAnnouncement?kodeEmiten=&emitenType=*&indexFrom=0&pageSize=10&dateFrom=19010101&dateTo=20260207&lang=id&keyword=",
+    "is_active": true,
+    "category": "Disclosure",
+    "type": "idx_api"
+  }
+]

@@ -71,6 +71,24 @@ class SupabaseDB:
             query = query.limit(limit)
         resp = query.execute()
         return [self._deserialize(r) for r in resp.data]
+    
+    def get_by_source(self, source_id: int, limit: Optional[int] = None) -> List[Dict[str, Any]]:
+        """Ambil berita spesifik berdasarkan source_id langsung dari database."""
+        try:
+            query = (
+                self._client.table("news")
+                .select("*")
+                .eq("source_id", source_id)
+                .order("published_at", desc=True)
+            )
+            if limit:
+                query = query.limit(limit)
+            resp = query.execute()
+            return [self._deserialize(r) for r in resp.data]
+        except Exception as exc:
+            from config import logger
+            logger.error("✗ get_by_source failed: %s", exc)
+            return []
 
     def get_all_urls(self) -> set:
         if self._urls_cache is not None:
@@ -434,3 +452,21 @@ class SupabaseDB:
         except Exception as exc:
             logger.error("✗ Cleanup failed: %s", exc)
             return 0
+    
+    # ============================= Search News ==================================== #
+    def search_news(self, keyword: str) -> List[Dict[str, Any]]:
+        """Mencari berita berdasarkan keyword pada judul ATAU rss_summary."""
+        try:
+            resp = (
+                self._client.table("news")
+                .select("*")
+                # Supabase OR logic: Cari di title ATAU di rss_summary
+                .or_(f"title.ilike.%{keyword}%,rss_summary.ilike.%{keyword}%")
+                .order("published_at", desc=True)
+                .execute()
+            )
+            return [self._deserialize(r) for r in resp.data]
+        except Exception as exc:
+            from config import logger
+            logger.error("✗ Search failed: %s", exc)
+            return []

@@ -21,15 +21,31 @@ from sources import (
 )
 from browser import BrowserManager
 from llm import GroqClient, filter_news_batch, analyze_single
+from tenacity import retry, stop_after_attempt, wait_fixed, retry_if_exception_type
 
 
 # ---------------------------------------------------------------------------
 # Phase 1-4: Collect → Parse → Filter → Store
 # ---------------------------------------------------------------------------
 
-
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_fixed(5),
+    # Ganti reraise=True dengan retry_error_callback
+    retry_error_callback=lambda retry_state: logger.error(
+        "❌ Gagal total setelah 3 kali percobaan. Menunggu siklus berikutnya. Error: %s", 
+        retry_state.outcome.exception()
+    ),
+    before_sleep=lambda retry_state: logger.warning(
+        "Network error / Collect failed. Retrying in 5 seconds... (Attempt %d/3). Error: %s",
+        retry_state.attempt_number,
+        retry_state.outcome.exception()
+    )
+)
 def cmd_collect(groq_api_key: str) -> None:
     """Phase 1-4: Collect → Parse → Filter → Store. Support RSS, IDX, Stockbit JSON."""
+    
+    # --- AWAL DARI KODEMU ASLI ---
     groq = GroqClient(groq_api_key)
     store = get_store()
 
@@ -57,9 +73,14 @@ def cmd_collect(groq_api_key: str) -> None:
             elif stype == "stockbit_api":
                 from sources import fetch_stockbit_news
                 entries = fetch_stockbit_news(feed_url)
+            elif stype == "sitemap.xml":
+                from sources import fetch_investor_sitemap
+                entries = fetch_investor_sitemap(feed_url)
             else:
                 entries = parse_feed(feed_url)
         except Exception as exc:
+            # Error saat fetch data per sumber tidak akan membatalkan seluruh collect,
+            # hanya di-skip. Ini perilaku aslimu.
             logger.error("  ✗ Failed: %s", exc)
             continue
 
@@ -90,7 +111,6 @@ def cmd_collect(groq_api_key: str) -> None:
     for source, entries, _ in all_new:
         stype = source.get("type", "rss")
         for entry in entries:
-            # Stockbit API pakai "titleurl" sebagai link
             url = entry.get("link") or entry.get("titleurl", "")
             if not url:
                 continue
@@ -109,7 +129,6 @@ def cmd_collect(groq_api_key: str) -> None:
                 "_no_pengumuman": entry.get("_no_pengumuman", ""),
                 "_jenis": entry.get("_jenis", ""),
                 "_perihal": entry.get("_perihal", ""),
-                # Stockbit custom
                 "_sb_postid": entry.get("id", ""),             
                 "_sb_content": entry.get("content", ""),       
                 "_sb_created": entry.get("created", ""),    
@@ -134,15 +153,7 @@ def cmd_collect(groq_api_key: str) -> None:
 
     logger.info("  ✓ %d relevant, %d filtered out.", len(relevant), filtered_out)
 
-    # ════════════════════════════════════════════════════════════════════
-    # NEW: SORTING LOGIC (Newest First)
-    # ════════════════════════════════════════════════════════════════════
-    # Kita urutkan list 'relevant' berdasarkan published_at secara descending (terbaru diatas).
-    # Ini memastikan:
-    # 1. Disimpan ke DB urut waktu
-    # 2. Notifikasi Telegram urut waktu
     relevant.sort(key=lambda x: x.get("published_at", "") or "", reverse=True)
-
 
     # ──────── PHASE 4: STORE TO DB ───────────
     logger.info("═" * 50)
@@ -211,12 +222,14 @@ def cmd_collect(groq_api_key: str) -> None:
 
     # ──────── NOTIF TELEGRAM ────────────────
     if inserted_records:
-        # inserted_records sudah otomatis urut karena 'relevant' sudah di-sort di atas
         try:
             from bot import notify_new_articles
             notify_new_articles(inserted_records)
         except Exception as exc:
+            # Jika Telegram error (seperti getaddrinfo failed), ini akan me-raise error
+            # dan ditangkap oleh decorator @retry di atas, sehingga seluruh fungsi cmd_collect diulang.
             logger.warning("Telegram notification failed: %s", exc)
+            raise exc # Sengaja dilempar agar tenacity menangkapnya dan melakukan retry
 
     # ──────── UPDATE STATE LAST PROCESSED ───
     for source, _, top_link in all_new:

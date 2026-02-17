@@ -8,7 +8,7 @@ from __future__ import annotations
 import time
 import threading
 import schedule
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 from config import logger, load_env
 
@@ -19,7 +19,8 @@ def _job_collect() -> None:
     from commands import cmd_collect
 
     try:
-        now = datetime.now(timezone.utc).strftime("%H:%M:%S")
+        wib = timezone(timedelta(hours=7))
+        now = datetime.now(wib).strftime("%H:%M:%S")
         logger.info("⏰ [Scheduler] Running collect job at %s", now)
 
         store = get_store()
@@ -45,14 +46,14 @@ def _job_collect() -> None:
 
 def _run_scheduler() -> None:
     """Loop scheduler (blocking, jalankan di thread)."""
-    logger.info("⏰ Scheduler started — collect setiap 15 menit")
+    logger.info("⏰ Scheduler started — collect setiap 5 menit")
 
     # Jalankan pertama kali saat startup (delay 10 detik biar bot siap)
     time.sleep(10)
     _job_collect()
 
-    # Schedule tiap 7 menit
-    schedule.every(7).minutes.do(_job_collect)
+    # Schedule tiap 5 menit
+    schedule.every(5).minutes.do(_job_collect)
 
     while True:
         schedule.run_pending()
