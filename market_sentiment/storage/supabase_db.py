@@ -8,8 +8,8 @@ import os
 from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List, Optional, Tuple
 
-from config import SIMILARITY_THRESHOLD, logger
-from helpers import generate_id, similarity
+from market_sentiment.core.config import SIMILARITY_THRESHOLD, logger
+from market_sentiment.core.helpers import generate_id, similarity
 
 
 class SupabaseDB:
@@ -17,7 +17,7 @@ class SupabaseDB:
 
     def __init__(self) -> None:
         from supabase import create_client
-        from config import SUPABASE_URL, SUPABASE_SERVICE_KEY
+        from market_sentiment.core.config import SUPABASE_URL, SUPABASE_SERVICE_KEY
 
         if not SUPABASE_URL or not SUPABASE_SERVICE_KEY:
             raise ValueError("Missing SUPABASE_URL or SUPABASE_SERVICE_KEY in .env")
@@ -86,7 +86,7 @@ class SupabaseDB:
             resp = query.execute()
             return [self._deserialize(r) for r in resp.data]
         except Exception as exc:
-            from config import logger
+            from market_sentiment.core.config import logger
             logger.error("✗ get_by_source failed: %s", exc)
             return []
 
@@ -467,6 +467,6 @@ class SupabaseDB:
             )
             return [self._deserialize(r) for r in resp.data]
         except Exception as exc:
-            from config import logger
+            from market_sentiment.core.config import logger
             logger.error("✗ Search failed: %s", exc)
             return []

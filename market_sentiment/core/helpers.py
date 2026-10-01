@@ -12,7 +12,7 @@ from typing import Any, Dict, Optional
 
 from dateutil import parser as dateutil_parser
 
-from config import CLOUDFLARE_MARKERS
+from market_sentiment.core.config import CLOUDFLARE_MARKERS
 
 
 def generate_id(url: str) -> str:

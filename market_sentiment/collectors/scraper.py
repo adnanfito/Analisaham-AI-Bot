@@ -13,8 +13,8 @@ from typing import Optional
 
 import requests
 
-from config import MIN_CONTENT_LENGTH, logger
-from helpers import clean_text, generate_id, is_cloudflare_blocked
+from market_sentiment.core.config import MIN_CONTENT_LENGTH, logger
+from market_sentiment.core.helpers import clean_text, generate_id, is_cloudflare_blocked
 
 
 # ---------------------------------------------------------------------------

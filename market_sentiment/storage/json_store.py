@@ -1,17 +1,16 @@
 """
-News Store — Auto-select JSON files atau Supabase
+JSON File Store — penyimpanan berita lokal (fallback tanpa Supabase)
 """
 
 from __future__ import annotations
 
 import json
-import os
 import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from config import NEWS_DIR, SIMILARITY_THRESHOLD, logger
-from helpers import generate_id, similarity
+from market_sentiment.core.config import NEWS_DIR, SIMILARITY_THRESHOLD, logger
+from market_sentiment.core.helpers import generate_id, similarity
 
 
 # ---------------------------------------------------------------------------
@@ -24,7 +23,7 @@ class JSONStore:
 
     def __init__(self, news_dir: Path = NEWS_DIR) -> None:
         self.news_dir = news_dir
-        self.news_dir.mkdir(exist_ok=True)
+        self.news_dir.mkdir(parents=True, exist_ok=True)
         self._cache: Optional[Dict[str, Dict[str, Any]]] = None
 
     def _load_all(self) -> Dict[str, Dict[str, Any]]:
@@ -137,27 +136,3 @@ class JSONStore:
 
 
 # ---------------------------------------------------------------------------
-# Factory: Auto-select store backend
-# ---------------------------------------------------------------------------
-
-
-def get_store():
-    """
-    Auto-select store backend:
-      - SUPABASE_URL set → SupabaseDB
-      - Otherwise → JSONStore (local)
-    """
-    supabase_url = os.environ.get("SUPABASE_URL", "")
-    supabase_key = os.environ.get("SUPABASE_SERVICE_KEY", "")
-
-    if supabase_url and supabase_key:
-        try:
-            from db import SupabaseDB
-            store = SupabaseDB()
-            logger.info("📦 Using Supabase database")
-            return store
-        except Exception as exc:
-            logger.warning("⚠ Supabase init failed (%s), falling back to JSON", exc)
-
-    logger.info("📦 Using local JSON store")
-    return JSONStore()

@@ -9,11 +9,22 @@ from pathlib import Path
 from typing import FrozenSet
 
 # ---------------------------------------------------------------------------
+# Paths
+# ---------------------------------------------------------------------------
+BASE_DIR = Path(__file__).resolve().parents[2]  # root project (berisi main.py)
+DATA_DIR = BASE_DIR / "data"
+DATA_DIR.mkdir(exist_ok=True)
+SOURCES_FILE = DATA_DIR / "sources.json"
+STATE_FILE = DATA_DIR / "state.json"
+SUBSCRIBERS_FILE = DATA_DIR / "subscribers.json"
+NEWS_DIR = DATA_DIR / "news"
+
+# ---------------------------------------------------------------------------
 # Load .env FIRST
 # ---------------------------------------------------------------------------
 try:
     from dotenv import load_dotenv
-    load_dotenv()
+    load_dotenv(BASE_DIR / ".env")
 except ImportError:
     pass
 
@@ -26,14 +37,6 @@ logging.basicConfig(
     datefmt="%Y-%m-%d %H:%M:%S",
 )
 logger = logging.getLogger("pipeline")
-
-# ---------------------------------------------------------------------------
-# Paths
-# ---------------------------------------------------------------------------
-BASE_DIR = Path(__file__).parent
-SOURCES_FILE = BASE_DIR / "sources.json"
-STATE_FILE = BASE_DIR / "state.json"
-NEWS_DIR = BASE_DIR / "news"
 
 # ---------------------------------------------------------------------------
 # LLM

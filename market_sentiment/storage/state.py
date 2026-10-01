@@ -8,7 +8,7 @@ import json
 import os
 from typing import Any, Dict
 
-from config import STATE_FILE, logger
+from market_sentiment.core.config import STATE_FILE, logger
 
 
 def load_state(db=None) -> Dict[str, Any]:

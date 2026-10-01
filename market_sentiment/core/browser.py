@@ -10,8 +10,8 @@ import time
 import threading
 from typing import Any, Optional
 
-from config import BROWSER_DELAY, logger
-from helpers import is_cloudflare_blocked
+from market_sentiment.core.config import BROWSER_DELAY, logger
+from market_sentiment.core.helpers import is_cloudflare_blocked
 
 
 class BrowserManager:

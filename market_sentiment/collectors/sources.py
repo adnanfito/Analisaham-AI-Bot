@@ -16,8 +16,8 @@ import feedparser
 import requests
 
 from tenacity import retry, stop_after_attempt, wait_fixed
-from config import SOURCES_FILE, SUPABASE_URL, SUPABASE_SERVICE_KEY, logger
-from helpers import clean_text, strip_html
+from market_sentiment.core.config import SOURCES_FILE, SUPABASE_URL, SUPABASE_SERVICE_KEY, logger
+from market_sentiment.core.helpers import clean_text, strip_html
 
 
 # ---------------------------------------------------------------------------
@@ -41,7 +41,7 @@ def load_sources() -> List[Dict[str, Any]]:
         logger.critical("Kredensial Supabase tidak ditemukan di .env!")
         sys.exit(1)
 
-    from db import SupabaseDB
+    from market_sentiment.storage.supabase_db import SupabaseDB
     db = SupabaseDB()
     
     sources = db.get_active_sources()

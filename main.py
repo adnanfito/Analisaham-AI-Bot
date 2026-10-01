@@ -16,14 +16,11 @@ Usage:
 
 import sys
 import traceback
-from pathlib import Path
 
-# Pastikan project directory ada di sys.path
-sys.path.insert(0, str(Path(__file__).parent))
-
-from config import load_env, logger
-from browser import BrowserManager
-from commands import cmd_collect, cmd_list, cmd_analyze, cmd_stats
+from market_sentiment.core.config import load_env, logger
+from market_sentiment.core.browser import BrowserManager
+from market_sentiment.pipeline.collect import cmd_collect
+from market_sentiment.pipeline.news import cmd_list, cmd_analyze, cmd_stats
 
 
 HELP_TEXT = """
@@ -53,7 +50,7 @@ def main() -> None:
         return
 
     if command == "bot":
-        from bot import run_bot
+        from market_sentiment.bot.app import run_bot
         run_bot()
         return
 
